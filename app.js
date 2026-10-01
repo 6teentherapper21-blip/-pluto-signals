@@ -1,10 +1,11 @@
 const WS_URL='wss://api.derivws.com/trading/v1/options/ws/public';
-const state={ws:null,markets:[],data:new Map(),signals:new Map(),tf:60,connected:false,timer:null};
+const state={ws:null,markets:[],data:new Map(),signals:new Map(),tf:60,connected:false,timer:null,reqId:1};
 const $=id=>document.getElementById(id);
 $('tf').onchange=e=>{state.tf=+e.target.value;if(state.connected)refreshAll()};
 $('filter').oninput=()=>{render();if(state.connected)refreshAll()};
 $('connect').onclick=()=>state.connected?disconnect():connect();
 function setStatus(s){$('status').textContent=s}
+function nextReqId(){return state.reqId++}
 function connect(){
   setStatus('Connecting…');
   try{state.ws=new WebSocket(WS_URL)}catch(e){setStatus('API failed: '+(e.message||'browser blocked connection'));return}
@@ -14,12 +15,9 @@ function connect(){
     state.connected=true;
     $('connect').textContent='Disconnect';
     setStatus('Live');
-    request({active_symbols:'brief',req_id:1});
+    request({active_symbols:'brief',req_id:nextReqId()});
   };
-  state.ws.onmessage=e=>{
-    try{onMsg(JSON.parse(e.data))}
-    catch(err){setStatus('API failed: invalid server response')}
-  };
+  state.ws.onmessage=e=>{try{onMsg(JSON.parse(e.data))}catch(err){setStatus('API failed: invalid server response')}};
   state.ws.onerror=()=>setStatus('API failed: WebSocket error');
   state.ws.onclose=()=>{state.connected=false;$('connect').textContent='Connect live data';if($('status').textContent==='Live')setStatus('Offline')};
 }
@@ -45,7 +43,7 @@ function onMsg(m){
   }
 }
 function normalizeHistory(m){if(m.candles)return m.candles.map(c=>({t:+c.epoch,o:+c.open,h:+c.high,l:+c.low,c:+c.close}));if(m.history?.prices)return m.history.prices.map((p,i)=>({t:(m.history.times||[])[i],p:+p}));return[]}
-function refreshAll(){const markets=filteredMarkets().slice(0,40);for(const x of markets){request({ticks_history:x.symbol,count:500,end:'latest',style:'candles',granularity:state.tf,req_id:Date.now()+Math.random()});request({ticks:x.symbol,subscribe:1,req_id:Date.now()+Math.random()})}}
+function refreshAll(){const markets=filteredMarkets().slice(0,40);for(const x of markets){request({ticks_history:x.symbol,count:500,end:'latest',style:'candles',granularity:state.tf,req_id:nextReqId()});request({ticks:x.symbol,subscribe:1,req_id:nextReqId()})}}
 function filteredMarkets(){const q=$('filter').value.trim().toLowerCase();return state.markets.filter(x=>!q||(`${x.symbol} ${x.name}`).toLowerCase().includes(q))}
 function sma(a,n){if(a.length<n)return null;let s=0;for(let i=a.length-n;i<a.length;i++)s+=a[i];return s/n}
 function ema(a,n){if(a.length<n)return null;let e=sma(a.slice(0,n),n),k=2/(n+1);for(let i=n;i<a.length;i++)e=a[i]*k+e*(1-k);return e}
