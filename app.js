@@ -1,11 +1,11 @@
-const WS_URL='wss://api.derivws.com/trading/v1/options/ws/public';
-const state={ws:null,markets:[],data:new Map(),signals:new Map(),tf:60,connected:false};
+const WS_URL='wss://ws.binaryws.com/websockets/v3';
+const state={ws:null,markets:[],data:new Map(),signals:new Map(),tf:60,connected:false,timer:null};
 const $=id=>document.getElementById(id);
 $('tf').onchange=e=>{state.tf=+e.target.value;if(state.connected) refreshAll()};
 $('filter').oninput=()=>{render();if(state.connected)refreshAll()};
 $('connect').onclick=()=>state.connected?disconnect():connect();
 function setStatus(s){$('status').textContent=s}
-function connect(){setStatus('Connecting…');state.ws=new WebSocket(WS_URL);state.ws.onopen=()=>{state.connected=true;$('connect').textContent='Disconnect';setStatus('Live');request({active_symbols:'brief',req_id:1})};state.ws.onmessage=e=>onMsg(JSON.parse(e.data));state.ws.onerror=()=>setStatus('Connection error');state.ws.onclose=()=>{state.connected=false;$('connect').textContent='Connect live data';setStatus('Offline')}}
+function connect(){setStatus('Connecting…');state.ws=new WebSocket(WS_URL);state.timer=setTimeout(()=>{if(!state.connected){setStatus('Connection timed out');try{state.ws.close()}catch(e){}}},10000);state.ws.onopen=()=>{clearTimeout(state.timer);state.connected=true;$('connect').textContent='Disconnect';setStatus('Live');request({active_symbols:'brief',product_type:'basic',req_id:1})};state.ws.onmessage=e=>onMsg(JSON.parse(e.data));state.ws.onerror=()=>setStatus('Connection error');state.ws.onclose=()=>{state.connected=false;$('connect').textContent='Connect live data';setStatus('Offline')}}
 function disconnect(){state.ws?.close();state.connected=false;state.data.clear();state.markets=[];state.signals.clear();$('marketCount').textContent='0';$('signalCount').textContent='0';$('lastScan').textContent='—';render()}
 function request(x){if(state.ws?.readyState===1)state.ws.send(JSON.stringify(x))}
 function onMsg(m){if(m.error){setStatus('API error');return}if(m.msg_type==='active_symbols'){state.markets=(m.active_symbols||[]).map(x=>({symbol:x.underlying_symbol||x.symbol,name:x.underlying_symbol_name||x.display_name||x.symbol})).filter(x=>x.symbol);$('marketCount').textContent=state.markets.length;refreshAll();return}if(m.msg_type==='history'){const sym=m.echo_req?.ticks_history||m.echo_req?.symbol||m.echo_req?.ticks;if(sym){state.data.set(sym,normalizeHistory(m));scan(sym)}}if(m.msg_type==='tick'){const sym=m.tick?.symbol;if(sym){const arr=state.data.get(sym)||[];arr.push({t:m.tick.epoch,p:+m.tick.quote});while(arr.length>2500)arr.shift();state.data.set(sym,arr);if(arr.length%3===0)scan(sym)}}}
